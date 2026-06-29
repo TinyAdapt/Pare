@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Claude
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# pyenv
+.python-version
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build / packaging
+*.so
+*.dylib
+MANIFEST
+
+# Results (large binary outputs — not tracked)
+results/*.json
+results/*.log
