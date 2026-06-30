@@ -1,23 +1,39 @@
-"""MMLU / HellaSwag / ARC evaluation via lm-evaluation-harness.
+"""Zero-shot commonsense evaluation via lm-evaluation-harness.
 
-Quantizes a model with Pare, then evaluates on standard LM tasks
-using EleutherAI's lm-evaluation-harness (https://github.com/EleutherAI/lm-evaluation-harness).
+Quantizes a model with Pare, then evaluates on the PRIORITY benchmark set —
+tasks verified directly against the original papers' tables (not search
+summaries; see project memory for the per-paper breakdown):
+  - SmoothQuant Table 3 (6 of the 7 tasks — HellaSwag and GSM8K deferred):
+    LAMBADA, PIQA, WinoGrande, OpenBookQA, RTE, COPA
+
+Deferred to nice-to-have-later (do NOT add back without confirming time budget):
+  - GSM8K: generation-based, ~4-6 sec/example x 1319 examples = ~90 min per
+    combination; 12 combos = ~18h total — not feasible in a time-boxed run
+  - HellaSwag: ~40k loglikelihood requests, 74% of SmoothQuant's full suite volume
+
+Dropped entirely (not deferred): ARC-Easy/ARC-Challenge (unverified for AWQ),
+MMLU (confirmed unused by GPTQ/AWQ/SmoothQuant for these text models),
+Vicuna/GPT-4-judge (needs separate judging pipeline).
 
 Install:
-    pip install "lm-eval>=0.4.2,<0.4.4"   # 0.4.4+ requires Python 3.13
+    pip install "lm-eval>=0.4.12"
+    # On Python <3.13, patch result_schema.py to remove extra_items= from TypedDict classes:
+    #   sed -i 's/, extra_items=[^)]*)//' $(python -c "import lm_eval,os; print(os.path.join(os.path.dirname(lm_eval.__file__),'result_schema.py'))")
 
 Usage:
-    # Evaluate all schemes on Llama-2-7B
-    python benchmarks/run_lm_eval.py --model llama2 --token $HF_TOKEN
+    # Evaluate all schemes on Llama-3.1-8B
+    python benchmarks/run_lm_eval.py --model llama31 --token $HF_TOKEN
 
     # Single scheme
-    python benchmarks/run_lm_eval.py --model llama2 --method gptq-int4
+    python benchmarks/run_lm_eval.py --model llama31 --method gptq-int4
 
 Tasks evaluated:
-    mmlu              57-subject multiple-choice QA (5-shot)
-    hellaswag         sentence-completion commonsense (0-shot)
-    arc_easy          ARC Easy multiple-choice (0-shot)
-    arc_challenge     ARC Challenge multiple-choice (0-shot)
+    lambada_openai    next-word prediction (0-shot)
+    piqa              physical commonsense reasoning (0-shot)
+    winogrande        coreference resolution (0-shot)
+    openbookqa        elementary science QA (0-shot)
+    rte               textual entailment (0-shot)
+    copa              causal reasoning (0-shot)
 
 Results are appended to results/lm_eval_results.json.
 """
@@ -40,20 +56,30 @@ from pare import QuantConfig, quantize
 RESULTS_DIR = Path(__file__).parent.parent / "results"
 
 MODELS = {
-    "llama2": "meta-llama/Llama-2-7b-hf",
-    "llama3": "meta-llama/Meta-Llama-3-8B",
-    "qwen":   "Qwen/Qwen2.5-7B",
+    "llama31": "meta-llama/Llama-3.1-8B",
+    "qwen25":  "Qwen/Qwen2.5-7B",
+    "olmo3":   "allenai/Olmo-3-1025-7B",
 }
 
 METHODS: dict[str, QuantConfig | None] = {
-    "fp16":        None,
-    "rtn-int8":    QuantConfig(bits=8, scheme="rtn",         granularity="per_channel"),
-    "gptq-int4":   QuantConfig(bits=4, scheme="gptq",        granularity="per_group", group_size=128),
-    "awq-int4":    QuantConfig(bits=4, scheme="awq",         granularity="per_group", group_size=128),
-    "smoothquant": QuantConfig(bits=8, scheme="smoothquant", granularity="per_channel"),
+    "fp16":      None,
+    "rtn-int8":  QuantConfig(bits=8, scheme="rtn",  granularity="per_channel"),
+    "gptq-int4": QuantConfig(bits=4, scheme="gptq", granularity="per_group", group_size=128),
+    "awq-int4":  QuantConfig(bits=4, scheme="awq",  granularity="per_group", group_size=128),
 }
 
-TASKS = ["mmlu", "hellaswag", "arc_easy", "arc_challenge"]
+# task -> num_fewshot. gsm8k is 5-shot per AWQ's protocol; the rest are 0-shot.
+# 6 of SmoothQuant Table 3's 7 tasks — HellaSwag deferred (nice-to-have-later,
+# it alone is ~74% of the full suite's request volume).
+# GSM8K removed: generation-based, ~90 min per combo, deferred to nice-to-have-later.
+TASK_FEWSHOT = {
+    "lambada_openai": 0,
+    "piqa":            0,
+    "winogrande":      0,
+    "openbookqa":      0,
+    "rte":             0,
+    "copa":            0,
+}
 
 DEVICE = "cuda"
 SEQ_LEN = 2048
@@ -64,8 +90,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model",  choices=list(MODELS) + ["all"], default="all")
     parser.add_argument("--method", choices=list(METHODS) + ["all"], default="all")
-    parser.add_argument("--tasks",  default=",".join(TASKS))
-    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--tasks",  default=",".join(TASK_FEWSHOT))
+    parser.add_argument("--batch-size", default="auto")
     parser.add_argument("--token", default=os.environ.get("HUGGING_FACE_HUB_TOKEN"))
     args = parser.parse_args()
 
@@ -91,8 +117,9 @@ def main():
         model_id = MODELS[model_key]
         print(f"\n[lm_eval] Loading {model_id} ...", flush=True)
         tokenizer = AutoTokenizer.from_pretrained(model_id, token=args.token)
+        # Load on CPU so deepcopy doesn't double VRAM usage
         model_fp16 = AutoModelForCausalLM.from_pretrained(
-            model_id, torch_dtype=torch.float16, token=args.token, device_map="auto",
+            model_id, torch_dtype=torch.float16, token=args.token,
         )
         model_fp16.eval()
 
@@ -111,6 +138,7 @@ def main():
 
             print(f"\n[lm_eval] {tag} ...", flush=True)
             config = METHODS[method_key]
+            # Deepcopy on CPU to avoid doubling VRAM; quantize() moves to GPU internally
             model_q = copy.deepcopy(model_fp16)
             model_q.eval()
 
@@ -122,20 +150,28 @@ def main():
                     device=DEVICE,
                 )
 
-            # Wrap for lm-evaluation-harness
-            lm = HFLM(pretrained=model_q, tokenizer=tokenizer, batch_size=args.batch_size)
-            eval_results = lm_eval.simple_evaluate(
-                model=lm,
-                tasks=tasks,
-                num_fewshot={"mmlu": 5, "hellaswag": 0, "arc_easy": 0, "arc_challenge": 0},
-            )
+            # Move to GPU for evaluation (model was deepcopied on CPU)
+            model_q = model_q.to(DEVICE)
 
-            # Extract per-task accuracy
+            # Wrap for lm-evaluation-harness
+            # lm_eval 0.4.12+ requires num_fewshot as int; group requested tasks by
+            # their fewshot count (TASK_FEWSHOT) and run one simple_evaluate() per group.
+            lm = HFLM(pretrained=model_q, tokenizer=tokenizer, batch_size=args.batch_size)
             task_scores = {}
-            for task_name, task_result in eval_results["results"].items():
-                # Primary metric differs by task: acc_norm for arc/hellaswag, acc for mmlu
-                acc = task_result.get("acc_norm,none") or task_result.get("acc,none")
-                task_scores[task_name] = round(acc * 100, 2) if acc else None
+            fewshot_groups: dict[int, list[str]] = {}
+            for t in tasks:
+                fewshot_groups.setdefault(TASK_FEWSHOT.get(t, 0), []).append(t)
+
+            for num_fewshot, group_tasks in fewshot_groups.items():
+                r = lm_eval.simple_evaluate(model=lm, tasks=group_tasks, num_fewshot=num_fewshot)
+                for task_name, task_result in r["results"].items():
+                    acc = (
+                        task_result.get("acc_norm,none")
+                        or task_result.get("acc,none")
+                        or task_result.get("exact_match,strict-match")
+                        or task_result.get("exact_match,flexible-extract")
+                    )
+                    task_scores[task_name] = round(acc * 100, 2) if acc is not None else None
 
             results[tag] = task_scores
             print(f"[lm_eval] {tag}: {task_scores}", flush=True)
@@ -153,19 +189,22 @@ def main():
     _print_summary(results)
 
 
+# 6 of SmoothQuant Table 3's 7 zero-shot tasks (HellaSwag deferred), averaged
+# the same way SmoothQuant reports its own accuracy number.
+ZERO_SHOT_SUITE = ["lambada_openai", "piqa", "winogrande", "openbookqa", "rte", "copa"]
+
+
 def _print_summary(results: dict) -> None:
-    print("\n" + "="*90)
-    print(f"{'Model/Method':<30}  {'MMLU':>6}  {'HellaSwag':>10}  {'ARC-E':>6}  {'ARC-C':>6}")
-    print("-"*90)
+    print("\n" + "="*55)
+    print(f"{'Model/Method':<30}  {'ZeroShot Avg (6)':>16}")
+    print("-"*55)
     for tag, scores in sorted(results.items()):
         if "error" in scores:
             print(f"{tag:<30}  ERROR")
             continue
-        mmlu = f"{scores.get('mmlu', '—'):>6}"
-        hella = f"{scores.get('hellaswag', '—'):>10}"
-        arce  = f"{scores.get('arc_easy', '—'):>6}"
-        arcc  = f"{scores.get('arc_challenge', '—'):>6}"
-        print(f"{tag:<30}  {mmlu}  {hella}  {arce}  {arcc}")
+        zs_scores = [scores[t] for t in ZERO_SHOT_SUITE if scores.get(t) is not None]
+        zs_avg = f"{sum(zs_scores) / len(zs_scores):>16.2f}" if zs_scores else f"{'—':>16}"
+        print(f"{tag:<30}  {zs_avg}")
 
 
 if __name__ == "__main__":

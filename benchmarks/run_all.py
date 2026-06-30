@@ -10,16 +10,15 @@ Usage:
     python benchmarks/run_all.py --skip-throughput # PPL only (faster)
 
 Models:
-    llama2  = meta-llama/Llama-2-7b-hf   (correctness baseline)
-    llama3  = meta-llama/Meta-Llama-3-8B  (modern arch, GQA)
-    qwen    = Qwen/Qwen2.5-7B             (diversity; official GPTQ-Int4 for comparison)
+    llama31 = meta-llama/Llama-3.1-8B    (current Llama standard)
+    qwen25  = Qwen/Qwen2.5-7B            (quantization-resilient; already benchmarked)
+    olmo3   = allenai/Olmo-3-1025-7B     (fully open, Oct 2025)
 
 Methods:
     fp16         baseline (no quantization)
     rtn-int8     RTN per-channel INT8
     gptq-int4    GPTQ per-group g=128 INT4
     awq-int4     AWQ per-group g=128 INT4
-    smoothquant  SmoothQuant per-channel INT8 W+A
 
 Results format (results/eval_results.json):
     {
@@ -55,17 +54,16 @@ N_CALIB   = 128
 RESULTS_DIR = Path(__file__).parent.parent / "results"
 
 MODELS = {
-    "llama2": "meta-llama/Llama-2-7b-hf",
-    "llama3": "meta-llama/Meta-Llama-3-8B",
-    "qwen":   "Qwen/Qwen2.5-7B",
+    "llama31": "meta-llama/Llama-3.1-8B",
+    "qwen25":  "Qwen/Qwen2.5-7B",
+    "olmo3":   "allenai/Olmo-3-1025-7B",
 }
 
 METHODS: dict[str, QuantConfig | None] = {
-    "fp16":        None,   # no quantization
-    "rtn-int8":    QuantConfig(bits=8, scheme="rtn",         granularity="per_channel"),
-    "gptq-int4":   QuantConfig(bits=4, scheme="gptq",        granularity="per_group", group_size=128),
-    "awq-int4":    QuantConfig(bits=4, scheme="awq",         granularity="per_group", group_size=128),
-    "smoothquant": QuantConfig(bits=8, scheme="smoothquant", granularity="per_channel"),
+    "fp16":      None,
+    "rtn-int8":  QuantConfig(bits=8, scheme="rtn",  granularity="per_channel"),
+    "gptq-int4": QuantConfig(bits=4, scheme="gptq", granularity="per_group", group_size=128),
+    "awq-int4":  QuantConfig(bits=4, scheme="awq",  granularity="per_group", group_size=128),
 }
 
 

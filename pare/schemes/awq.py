@@ -222,7 +222,16 @@ def _apply_awq_groups(
 
     Targets Llama/Mistral/Qwen block naming: input_layernorm, post_attention_layernorm,
     self_attn.{q,k,v,o}_proj, mlp.{gate,up,down}_proj.
+
+    Skips scale fusion entirely for architectures that lack input_layernorm
+    (e.g. post-norm models like OLMo-3 where post_attention_layernorm follows
+    the attention residual rather than preceding the attention projections —
+    fusing there would corrupt weights). Those models fall through to plain
+    RTN quantization.
     """
+    if not hasattr(layer, "input_layernorm"):
+        return
+
     attn = layer.self_attn
     mlp  = layer.mlp
 
