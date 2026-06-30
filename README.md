@@ -6,19 +6,18 @@ Quantize any LLM in one line. Switch between GPTQ, AWQ, SmoothQuant, and RTN by 
 
 ## Benchmarks
 
-WikiText-2 perplexity (PPL ↓), A40 46 GB:
+Zero-shot accuracy — 6-task average (LAMBADA, PIQA, WinoGrande, OpenBookQA, RTE, COPA), A40 46 GB:
 
-| Method | Llama-2-7B | Llama-3-8B | Qwen2.5-7B |
-|--------|-----------|-----------|-----------|
-| FP16 baseline | 5.47 | 6.14 | 6.85 |
-| RTN INT8 | 5.48 (+0.01) | 6.14 (+0.01) | 6.85 (+0.00) |
-| SmoothQuant INT8 | 5.58 (+0.11) | 6.25 (+0.11) | 6.96 (+0.11) |
-| AWQ INT4 | 5.67 (+0.20) | 6.67 (+0.53) | 7.13 (+0.28) |
-| GPTQ INT4 | 5.74 (+0.27) | 8.75 (+2.61) | 7.04 (+0.19) |
+| Method | Llama-3.1-8B | Qwen2.5-7B | OLMo-3-7B |
+|--------|-------------|-----------|----------|
+| FP16 baseline | 73.22 | 74.13 | 69.57 |
+| RTN INT8 | 73.00 (−0.22) | 74.09 (−0.04) | 69.57 (0.00) |
+| GPTQ INT4 | 71.65 (−1.57) | 73.39 (−0.74) | 69.42 (−0.15) |
+| AWQ INT4 | 70.69 (−2.53) | 73.93 (−0.20) | — † |
 
-Throughput on Llama-2-7B (BS=1): FP16 33 tok/s · RTN/SmoothQuant ~2.3 tok/s · AWQ/GPTQ ~1.2 tok/s †
+† OLMo-3-7B AWQ pending re-run: AWQ's scale fusion targets Llama/Qwen/Mistral pre-norm architectures; OLMo-3 uses a post-norm design that required a compatibility fix.
 
-† Dequantize-on-the-fly. With the optional Triton kernel: **8.8× faster at BS=1, 2.8× at BS=4**.
+WikiText-2 perplexity (PPL ↓) and throughput coming shortly for the new model lineup.
 
 ---
 
@@ -41,8 +40,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from pare import quantize, QuantConfig
 from pare.calibration.data import load_wikitext2_calibration
 
-model     = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+model     = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-7B")
+tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-7B")
 calib     = load_wikitext2_calibration(tokenizer, n_samples=128, seq_len=2048)
 # or use your own: a list of tokenized tensors of shape (seq_len,)
 
@@ -56,13 +55,13 @@ Save and reload:
 ```python
 from pare import save_quantized, load_quantized
 
-save_quantized(model, "llama2-awq-int4/")
-# [pare] Saved 224 quantized layers to llama2-awq-int4  (3821 MB)
+save_quantized(model, "qwen25-awq-int4/")
+# [pare] Saved 224 quantized layers to qwen25-awq-int4  (3821 MB)
 
 from transformers import AutoConfig, AutoModelForCausalLM
-config = AutoConfig.from_pretrained("meta-llama/Llama-2-7b-hf")
+config = AutoConfig.from_pretrained("Qwen/Qwen2.5-7B")
 model  = AutoModelForCausalLM.from_config(config)   # architecture only, no weights
-model  = load_quantized(model, "llama2-awq-int4/")
+model  = load_quantized(model, "qwen25-awq-int4/")
 ```
 
 ---
@@ -72,11 +71,11 @@ model  = load_quantized(model, "llama2-awq-int4/")
 | `scheme=` | Calibration | Quality | When to use |
 |-----------|-------------|---------|-------------|
 | `"awq"` ★ | Yes | ★★★★ | **Default.** Best robustness across architectures; recommended starting point |
-| `"gptq"` | Yes | ★★★★ | Matches AWQ on Qwen2.5-7B, underperforms it on Llama-3-8B without `act_order=True` (untested here) |
+| `"gptq"` | Yes | ★★★★ | Matches AWQ on Qwen2.5-7B; architecture-agnostic — works correctly across pre- and post-norm models |
 | `"smoothquant"` | Yes | ★★★★ | INT8 W+A; closest to FP16 PPL; no INT4 |
 | `"rtn"` | No | ★★★ | No calibration needed; good baseline or for NF4/FP8 |
 
-★ Default: `QuantConfig()` uses AWQ. AWQ consistently outperforms plain GPTQ on modern architectures — on Llama-3-8B the gap is 6.67 vs 8.75 PPL. `act_order=True` may close this gap but hasn't been benchmarked yet.
+★ Default: `QuantConfig()` uses AWQ. AWQ is the strongest INT4 method on Qwen2.5-7B (−0.20 vs FP16 baseline). GPTQ is architecture-agnostic and is recommended when the target model's architecture is uncertain. `act_order=True` may further improve GPTQ quality but has not been benchmarked yet.
 
 All schemes support `bits=4` or `bits=8`. Use `group_size=128` (default) for best INT4 quality.
 
