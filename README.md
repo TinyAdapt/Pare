@@ -12,7 +12,7 @@ WikiText-2 perplexity (PPL ↓), A40 46 GB:
 |--------|-------------|-----------|----------|
 | FP16 baseline | 6.24 | 6.85 | 9.92 |
 | RTN INT8 | 6.25 (+0.01) | 6.85 (+0.00) | 9.92 (+0.00) |
-| GPTQ INT4 | 11.10 (+4.86) | 7.04 (+0.19) | 10.21 (+0.29) |
+| GPTQ INT4 | 11.10 (+4.86) ‡ | 7.04 (+0.19) | 10.21 (+0.29) |
 | AWQ INT4 | 6.77 (+0.53) | 7.13 (+0.28) | 10.36 (+0.44) |
 
 Zero-shot accuracy — 6-task average (LAMBADA, PIQA, WinoGrande, OpenBookQA, RTE, COPA) ↑:
@@ -34,6 +34,8 @@ Throughput at BS=1 (tok/s), dequantize-on-the-fly †:
 | AWQ INT4 | 1.1 | 1.2 | 1.2 |
 
 † With the optional Triton kernel: **8.8× faster at BS=1, 2.8× at BS=4**.
+
+‡ Llama-3.1-8B is sensitive to column ordering. With `act_order=True`: PPL improves from 11.10 to 6.54 (+0.30), accuracy moves from 71.65 to 70.05. Qwen2.5-7B and OLMo-3-7B are unaffected (PPL: 7.04 to 7.02, 10.21 to 10.16).
 
 ---
 
@@ -91,7 +93,7 @@ model  = load_quantized(model, "qwen25-awq-int4/")
 | `"smoothquant"` | Yes | ★★★★ | INT8 W+A; closest to FP16 PPL; no INT4 |
 | `"rtn"` | No | ★★★ | No calibration needed; good baseline or for NF4/FP8 |
 
-★ Default: `QuantConfig()` uses AWQ. AWQ is the strongest INT4 method on Qwen2.5-7B (−0.20 vs FP16 baseline). GPTQ is architecture-agnostic and is recommended when the target model's architecture is uncertain. `act_order=True` may further improve GPTQ quality but has not been benchmarked yet.
+★ Default: `QuantConfig()` uses AWQ. AWQ is the strongest INT4 method on Qwen2.5-7B (−0.20 vs FP16 baseline). GPTQ is architecture-agnostic and is recommended when the target model's architecture is uncertain. On Llama-3.x architectures, `act_order=True` is recommended; it reduces PPL from 11.10 to 6.54 on Llama-3.1-8B. On Qwen2.5 and OLMo-3 the effect is negligible.
 
 All schemes support `bits=4` or `bits=8`. Use `group_size=128` (default) for best INT4 quality.
 
