@@ -143,8 +143,8 @@ class _LayerwiseSmoothQuant:
                 if isinstance(mod, nn.Linear)
             }
 
-            # ── 1. Collect max |x| for each linear layer's input ──────────
-            act_stats = _collect_max_abs(layer, named_linears, inps, pe, device)
+            # ── 1. Collect per-channel activation range ────────────────────
+            act_stats = _collect_max_abs(layer, named_linears, inps, pe, device, quantizer.config)
 
             # ── 2. Compute smooth factors and fuse into predecessor layers ─
             _apply_smooth_groups(layer, named_linears, act_stats, quantizer.config)
@@ -182,12 +182,25 @@ def _collect_max_abs(
     inps: list[Tensor],
     pe,
     device: torch.device,
+    config: "QuantConfig | None" = None,
 ) -> dict[str, Tensor]:
-    """Collect per-channel max |x| for each linear layer's input activation."""
-    from pare.calibration.observer import ActivationObserver
+    """Collect per-channel activation range for each linear layer's input."""
+    from pare.calibration.observer import ActivationObserver, RangeObserver
     from pare.calibration.layerwise import _call_layer
 
-    observers = {n: ActivationObserver() for n in named_linears}
+    mode = config.calibration if config is not None else "absmax"
+    percentile = config.calibration_percentile if config is not None else 99.99
+
+    if mode == "absmax":
+        observers: dict[str, ActivationObserver | RangeObserver] = {
+            n: ActivationObserver() for n in named_linears
+        }
+    else:
+        observers = {
+            n: RangeObserver(mode=mode, percentile=percentile)
+            for n in named_linears
+        }
+
     hooks = [
         mod.register_forward_hook(
             (lambda obs: lambda m, inp, out: obs.accumulate(inp[0].detach()))(observers[n])
@@ -202,7 +215,9 @@ def _collect_max_abs(
     for h in hooks:
         h.remove()
 
-    return {n: obs.max_abs() for n, obs in observers.items()}
+    if mode == "absmax":
+        return {n: obs.max_abs() for n, obs in observers.items()}  # type: ignore[union-attr]
+    return {n: obs.finalize() for n, obs in observers.items()}  # type: ignore[union-attr]
 
 
 # ---------------------------------------------------------------------------

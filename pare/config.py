@@ -54,6 +54,8 @@ class QuantConfig:
     # Calibration
     n_calibration_samples: int = 128
     calibration_seq_len: int = 2048
+    calibration: str = "absmax"         # "absmax" | "percentile" | "mse"
+    calibration_percentile: float = 99.99
 
     # GPTQ
     damp_percent: float = 0.01
@@ -76,6 +78,8 @@ class QuantConfig:
             self.dtype = QuantDtype.from_bits(self.bits)
         if self.scheme not in {"rtn", "gptq", "awq", "smoothquant"}:
             raise ValueError(f"Unknown scheme: {self.scheme!r}")
+        if self.calibration not in {"absmax", "percentile", "mse"}:
+            raise ValueError(f"Unknown calibration: {self.calibration!r}")
         if self.granularity not in {"per_tensor", "per_channel", "per_group"}:
             raise ValueError(f"Unknown granularity: {self.granularity!r}")
         if self.bits not in {2, 3, 4, 8}:
