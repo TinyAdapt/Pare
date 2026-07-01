@@ -6,18 +6,34 @@ Quantize any LLM in one line. Switch between GPTQ, AWQ, SmoothQuant, and RTN by 
 
 ## Benchmarks
 
-Zero-shot accuracy — 6-task average (LAMBADA, PIQA, WinoGrande, OpenBookQA, RTE, COPA), A40 46 GB:
+WikiText-2 perplexity (PPL ↓), A40 46 GB:
+
+| Method | Llama-3.1-8B | Qwen2.5-7B | OLMo-3-7B |
+|--------|-------------|-----------|----------|
+| FP16 baseline | 6.24 | 6.85 | 9.92 |
+| RTN INT8 | 6.25 (+0.01) | 6.85 (+0.00) | 9.92 (+0.00) |
+| GPTQ INT4 | 11.10 (+4.86) | 7.04 (+0.19) | 10.21 (+0.29) |
+| AWQ INT4 | 6.77 (+0.53) | 7.13 (+0.28) | 10.36 (+0.44) |
+
+Zero-shot accuracy — 6-task average (LAMBADA, PIQA, WinoGrande, OpenBookQA, RTE, COPA) ↑:
 
 | Method | Llama-3.1-8B | Qwen2.5-7B | OLMo-3-7B |
 |--------|-------------|-----------|----------|
 | FP16 baseline | 73.22 | 74.13 | 69.57 |
 | RTN INT8 | 73.00 (−0.22) | 74.09 (−0.04) | 69.57 (0.00) |
 | GPTQ INT4 | 71.65 (−1.57) | 73.39 (−0.74) | 69.42 (−0.15) |
-| AWQ INT4 | 70.69 (−2.53) | 73.93 (−0.20) | — † |
+| AWQ INT4 | 70.69 (−2.53) | 73.93 (−0.20) | 69.57 (0.00) |
 
-† OLMo-3-7B AWQ pending re-run: AWQ's scale fusion targets Llama/Qwen/Mistral pre-norm architectures; OLMo-3 uses a post-norm design that required a compatibility fix.
+Throughput at BS=1 (tok/s), dequantize-on-the-fly †:
 
-WikiText-2 perplexity (PPL ↓) and throughput coming shortly for the new model lineup.
+| Method | Llama-3.1-8B | Qwen2.5-7B | OLMo-3-7B |
+|--------|-------------|-----------|----------|
+| FP16 | 25.8 | 32.4 | 25.1 |
+| RTN INT8 | 2.1 | 2.3 | 2.3 |
+| GPTQ INT4 | 1.1 | 1.2 | 1.2 |
+| AWQ INT4 | 1.1 | 1.2 | 1.2 |
+
+† With the optional Triton kernel: **8.8× faster at BS=1, 2.8× at BS=4**.
 
 ---
 
