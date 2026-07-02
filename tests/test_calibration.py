@@ -84,6 +84,21 @@ class TestRangeObserverPercentile:
         obs.accumulate(activation_batch)
         assert obs.finalize().shape == (64,)
 
+    def test_percentile_sparse_channel_no_zero(self):
+        # A channel that is near-zero for 99% of tokens must not return 0 —
+        # that would drive the smooth factor s → 0, overflowing FP16 layernorm weights
+        # (ln.weight / s > 65504) and producing NaN in INT8 fake-quant.
+        # Truly zero channels (absmax = 0) are fine and allowed to stay 0.
+        x = torch.zeros(512, 32)
+        x[0, 5] = 10.0   # channel 5 fires exactly once (sparse but non-zero absmax)
+        obs = RangeObserver(mode="percentile", percentile=99.0)
+        obs.accumulate(x)
+        result = obs.finalize()
+        # Channel 5: 99th percentile = 0, but absmax = 10.0 → floor = 0.1
+        assert result[5] > 0, (
+            f"percentile returned 0 for a sparse-but-active channel: {result[5]}"
+        )
+
 
 class TestRangeObserverMSE:
     def test_mse_output_shape(self, activation_batch):

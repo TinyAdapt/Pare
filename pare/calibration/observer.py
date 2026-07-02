@@ -146,6 +146,12 @@ class RangeObserver:
 
         if self.mode == "percentile":
             result = torch.quantile(samples, self.percentile / 100.0, dim=0)
+            # Guard: sparse/inactive channels can have a near-zero percentile while
+            # their true absmax is non-zero. A tiny x_max drives s → 0, which causes
+            # ln.weight / s to overflow FP16 (> 65504 → inf → NaN in INT8 fake-quant).
+            # Floor at 1% of the channel's absmax to keep the smooth factor bounded.
+            floor = self._max.cpu() * 0.01
+            result = torch.maximum(result, floor)
             return result.to(self._max.device)
 
         return self._mse_optimal(samples).to(self._max.device)
