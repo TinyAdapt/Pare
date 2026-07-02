@@ -1,0 +1,29 @@
+# Pinned GPU experiment environment — all benchmark runs must use these exact versions.
+# Base: Python 3.11.10, CUDA 12.4, NVIDIA A40
+#
+# Install on a fresh pod:
+#   pip install -r requirements-gpu.txt
+#
+# torch must be installed from the CUDA wheel first if not already present:
+#   pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 \
+#       --index-url https://download.pytorch.org/whl/cu124
+
+# Core (usually pre-installed on pod base image)
+torch==2.4.1+cu124
+torchvision==0.19.1+cu124
+torchaudio==2.4.1+cu124
+triton==3.0.0
+
+# HuggingFace ecosystem
+transformers==5.12.1
+tokenizers==0.22.2
+datasets==5.0.0
+accelerate==1.14.0
+safetensors==0.8.0
+huggingface_hub==1.21.0
+
+# Eval
+lm-eval==0.4.12
+
+# Pare
+git+https://github.com/TinyAdapt/Pare.git
