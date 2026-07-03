@@ -9,7 +9,7 @@ from pare.core.dtype import QuantDtype
 from pare.kv_cache import KVCacheConfig, QuantizedKVCache
 from pare.model.io import load_quantized, save_quantized
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __all__ = [
     "QuantConfig", "QuantDtype", "quantize",
     "save_quantized", "load_quantized",
