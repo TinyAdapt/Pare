@@ -7,6 +7,12 @@
                           absmax | percentile | mse.  Drop-in replacement
                           for the max_abs() path in SmoothQuant when a
                           better calibration strategy is configured.
+
+The three range-setting strategies follow the standard PTQ calibration
+literature — see Nagel et al., "A White Paper on Neural Network Quantization"
+(2021), Sec. 4.1, and Wu et al., "Integer Quantization for Deep Learning
+Inference" (2020), which describe max, percentile, and MSE-based range
+estimation as the canonical options.
 """
 
 from __future__ import annotations
@@ -145,6 +151,8 @@ class RangeObserver:
         samples = torch.cat(self._buffer, dim=0)  # [n_samples, in_features]
 
         if self.mode == "percentile":
+            # Percentile calibration: clip at the p-th percentile of |x| per
+            # channel (Wu et al. 2020; Nagel et al. 2021, Sec. 4.1).
             result = torch.quantile(samples, self.percentile / 100.0, dim=0)
             # Guard: sparse/inactive channels can have a near-zero percentile while
             # their true absmax is non-zero. A tiny x_max drives s → 0, which causes
@@ -156,22 +164,30 @@ class RangeObserver:
 
         return self._mse_optimal(samples).to(self._max.device)
 
-    def _mse_optimal(self, samples: Tensor, n_candidates: int = 100) -> Tensor:
-        q_max = 127.0  # INT8 signed symmetric range
+    def _mse_optimal(self, samples: Tensor, n_grid: int = 80) -> Tensor:
+        """MSE-optimal clipping magnitude per channel.
+
+        For each channel, choose the clipping value ``c`` that minimizes the
+        expected symmetric-INT8 quantization error ``E[(x - Q(x; c))^2]`` — the
+        MSE range-setting criterion of Nagel et al., "A White Paper on Neural
+        Network Quantization" (2021), Sec. 4.1. Solved by a grid search over
+        fractions of the per-channel observed maximum.
+        """
+        levels = 127.0  # symmetric INT8 grid: [-127, 127]
         ch_max = samples.max(dim=0).values.clamp(min=1e-8)  # [n_channels]
-        best_mse = torch.full_like(ch_max, float("inf"))
-        best_range = ch_max.clone()
+        best_err = torch.full_like(ch_max, float("inf"))
+        best_c   = ch_max.clone()
 
-        for alpha in torch.linspace(0.5, 1.0, n_candidates):
-            r = alpha * ch_max                             # [n_channels]
-            scale = (r / q_max).clamp(min=1e-8)           # [n_channels]
-            q = torch.clamp(torch.round(samples / scale), -q_max, q_max) * scale
-            mse = ((samples - q) ** 2).mean(dim=0)        # [n_channels]
-            better = mse < best_mse
-            best_mse = torch.where(better, mse, best_mse)
-            best_range = torch.where(better, r, best_range)
+        for frac in torch.linspace(1.0, 0.2, n_grid):
+            c     = frac * ch_max                          # candidate clip magnitude
+            scale = (c / levels).clamp(min=1e-8)
+            recon = torch.clamp(torch.round(samples / scale), -levels, levels) * scale
+            err   = ((samples - recon) ** 2).mean(dim=0)   # [n_channels]
+            improved = err < best_err
+            best_err = torch.where(improved, err, best_err)
+            best_c   = torch.where(improved, c, best_c)
 
-        return best_range
+        return best_c
 
     def reset(self) -> None:
         self._max = None
