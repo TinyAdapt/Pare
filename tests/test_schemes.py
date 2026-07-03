@@ -1,4 +1,4 @@
-"""Tests for quantization schemes (RTN) and QuantizedLinear."""
+"""Tests for quantization schemes (RTN, AWQ) and QuantizedLinear."""
 
 import pytest
 import torch
@@ -6,7 +6,48 @@ import torch.nn as nn
 
 from pare import QuantConfig, quantize
 from pare.layers.linear import QuantizedLinear
+from pare.schemes.awq import _apply_awq_groups
 from pare.schemes.rtn import RTNQuantizer
+
+
+# ---------------------------------------------------------------------------
+# Minimal fake transformer blocks for AWQ structural tests
+# ---------------------------------------------------------------------------
+
+class _FakeAttn(nn.Module):
+    def __init__(self, d: int):
+        super().__init__()
+        self.q_proj = nn.Linear(d, d, bias=False)
+        self.k_proj = nn.Linear(d, d, bias=False)
+        self.v_proj = nn.Linear(d, d, bias=False)
+        self.o_proj = nn.Linear(d, d, bias=False)
+
+
+class _FakeMLP(nn.Module):
+    def __init__(self, d: int):
+        super().__init__()
+        self.gate_proj = nn.Linear(d, d, bias=False)
+        self.up_proj   = nn.Linear(d, d, bias=False)
+        self.down_proj = nn.Linear(d, d, bias=False)
+
+
+class _FakeBlockPreNorm(nn.Module):
+    """Llama/Qwen-style: input_layernorm before attention projections."""
+    def __init__(self, d: int = 32):
+        super().__init__()
+        self.self_attn = _FakeAttn(d)
+        self.mlp = _FakeMLP(d)
+        self.input_layernorm = nn.LayerNorm(d)
+        self.post_attention_layernorm = nn.LayerNorm(d)
+
+
+class _FakeBlockPostNorm(nn.Module):
+    """OLMo-3-style: no input_layernorm; post_attention_layernorm follows the residual."""
+    def __init__(self, d: int = 32):
+        super().__init__()
+        self.self_attn = _FakeAttn(d)
+        self.mlp = _FakeMLP(d)
+        self.post_attention_layernorm = nn.LayerNorm(d)
 
 
 # ---------------------------------------------------------------------------
@@ -150,3 +191,60 @@ class TestEndToEnd:
         assert model.fc1.packed_weight is not None
         # Packed weight uses half the elements of the original
         assert model.fc1.packed_weight.numel() == 64 * 128 // 2
+
+
+# ---------------------------------------------------------------------------
+# AWQ post-norm guard regression (commit 006fdeb)
+#
+# OLMo-3 and other post-norm models have post_attention_layernorm AFTER the
+# attention residual, not before the projections. Fusing AWQ scales into it
+# corrupts the weights. The early-return guard in _apply_awq_groups (keyed on
+# the absence of input_layernorm) must prevent any weight modification.
+# ---------------------------------------------------------------------------
+
+class TestAWQPostNormGuard:
+    D = 32
+
+    def _act_stats(self) -> dict:
+        # Alternating small/large channels forces _search_scale to pick a
+        # non-unity alpha, so pre-norm blocks definitely get modified.
+        v = torch.ones(self.D)
+        v[::2]  = 0.1
+        v[1::2] = 10.0
+        return {
+            "self_attn.q_proj": v.clone(),
+            "self_attn.o_proj": v.clone(),
+            "mlp.gate_proj":    v.clone(),
+            "mlp.down_proj":    v.clone(),
+        }
+
+    def _config(self) -> QuantConfig:
+        return QuantConfig(bits=4, scheme="awq", granularity="per_group", group_size=self.D)
+
+    def test_post_norm_block_no_weight_change(self):
+        """Post-norm block: _apply_awq_groups must leave ALL weights unchanged."""
+        torch.manual_seed(0)
+        block = _FakeBlockPostNorm(self.D)
+        q_before   = block.self_attn.q_proj.weight.data.clone()
+        gate_before = block.mlp.gate_proj.weight.data.clone()
+        ln_before  = block.post_attention_layernorm.weight.data.clone()
+
+        _apply_awq_groups(block, self._act_stats(), self._config())
+
+        assert torch.equal(block.self_attn.q_proj.weight.data, q_before), \
+            "q_proj was modified on a post-norm block — guard failed"
+        assert torch.equal(block.mlp.gate_proj.weight.data, gate_before), \
+            "gate_proj was modified on a post-norm block — guard failed"
+        assert torch.equal(block.post_attention_layernorm.weight.data, ln_before), \
+            "post_attention_layernorm was modified on a post-norm block — guard failed"
+
+    def test_pre_norm_block_group1_scale_fused(self):
+        """Pre-norm block: Group 1 scale must be fused into q/k/v projections."""
+        torch.manual_seed(1)
+        block = _FakeBlockPreNorm(self.D)
+        q_before = block.self_attn.q_proj.weight.data.clone()
+
+        _apply_awq_groups(block, self._act_stats(), self._config())
+
+        assert not torch.equal(block.self_attn.q_proj.weight.data, q_before), \
+            "q_proj was not modified on a pre-norm block — scale fusion did not fire"

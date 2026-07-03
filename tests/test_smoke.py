@@ -295,3 +295,43 @@ class TestQwenSmoothQuant:
         print(f"\nQwen2.5-0.5B SmoothQuant INT8 LAMBADA: {acc:.1%}")
         assert acc > 0.05, f"LAMBADA accuracy collapsed to {acc:.1%} — likely a bug"
 
+    def test_smoothquant_percentile_ppl(self, qwen_model_and_tokenizer, qwen_calibration_data):
+        """Percentile calibration mode: wiring from QuantConfig → RangeObserver → smooth
+        factors must run end-to-end without error and produce sane output."""
+        import copy
+        model, tokenizer = qwen_model_and_tokenizer
+        model_q = copy.deepcopy(model)
+
+        config = QuantConfig(
+            bits=8, scheme="smoothquant", granularity="per_channel",
+            calibration="percentile", calibration_percentile=99.9,
+        )
+        quantize(model_q, config, calibration_data=qwen_calibration_data, device="cpu")
+
+        ppl = evaluate_perplexity(
+            model_q, tokenizer, dataset="wikitext2",
+            seq_len=512, n_samples=10, device="cpu",
+        )
+        print(f"\nQwen2.5-0.5B SmoothQuant percentile PPL: {ppl:.2f}")
+        assert ppl < 100.0, f"SmoothQuant percentile PPL > 100: {ppl:.2f} — likely a bug"
+
+    def test_smoothquant_mse_ppl(self, qwen_model_and_tokenizer, qwen_calibration_data):
+        """MSE calibration mode: wiring from QuantConfig → RangeObserver(mse) → smooth
+        factors must run end-to-end without error and produce sane output."""
+        import copy
+        model, tokenizer = qwen_model_and_tokenizer
+        model_q = copy.deepcopy(model)
+
+        config = QuantConfig(
+            bits=8, scheme="smoothquant", granularity="per_channel",
+            calibration="mse",
+        )
+        quantize(model_q, config, calibration_data=qwen_calibration_data, device="cpu")
+
+        ppl = evaluate_perplexity(
+            model_q, tokenizer, dataset="wikitext2",
+            seq_len=512, n_samples=10, device="cpu",
+        )
+        print(f"\nQwen2.5-0.5B SmoothQuant MSE PPL: {ppl:.2f}")
+        assert ppl < 100.0, f"SmoothQuant mse PPL > 100: {ppl:.2f} — likely a bug"
+
