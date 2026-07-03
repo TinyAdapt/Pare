@@ -167,6 +167,10 @@ The methods implemented in Pare are from the following papers:
 - **KIVI** — Liu, Yuan, Jin, Zhong, Xu, Braverman, Chen, Hu. *KIVI: A Tuning-Free Asymmetric 2bit Quantization for KV Cache.* ICML 2024. [arXiv:2402.02750](https://arxiv.org/abs/2402.02750)
 - **NF4 / QLoRA** — Dettmers, Pagnoni, Holtzman, Zettlemoyer. *QLoRA: Efficient Finetuning of Quantized LLMs.* NeurIPS 2023. [arXiv:2305.14314](https://arxiv.org/abs/2305.14314)
 
+Other resources:
+
+- Vivek Kalyanarangan. *Quantization and Fast Inference: A Practitioner's Guide to Efficient AI.* Manning, May 2026.
+
 ## Citation
 
 ```bibtex
