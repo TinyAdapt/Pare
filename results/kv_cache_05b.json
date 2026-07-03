@@ -1,0 +1,29 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B",
+  "config": {
+    "bits": 4,
+    "group_size": 32,
+    "mse_eval": "16 seqs x 512 tokens",
+    "ppl_eval": "64 seqs x 512 tokens",
+    "dataset": "WikiText-2 test",
+    "wikitext2_tokens": 299078
+  },
+  "provenance": {
+    "run_date": "2026-07-02",
+    "hardware": "NVIDIA A40 46GB",
+    "source_log": "task bloqq4vll (2026-07-02 19:27)",
+    "note": "Reconstructed from benchmark console output; raw JSON was not pulled from the (now deleted) pod. Values verified against the task log."
+  },
+  "results": {
+    "fp16": {
+      "ppl": 17.0162
+    },
+    "kivi": {
+      "k_mse": 1.180e-02,
+      "v_mse": 7.974e-03,
+      "attn_rel_err": 1.311e-02,
+      "ppl": 17.2033,
+      "delta_ppl": 0.1871
+    }
+  }
+}
