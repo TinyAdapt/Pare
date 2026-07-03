@@ -157,6 +157,16 @@ Requires `pip install triton>=3.0`.
 
 ---
 
+## References
+
+The methods implemented in Pare are from the following papers:
+
+- **GPTQ** — Frantar, Ashkboos, Hoefler, Alistarh. *GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers.* ICLR 2023. [arXiv:2210.17323](https://arxiv.org/abs/2210.17323)
+- **AWQ** — Lin et al. *AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration.* MLSys 2024. [arXiv:2306.00978](https://arxiv.org/abs/2306.00978)
+- **SmoothQuant** — Xiao, Lin, Seznec, Wu, Demouth, Han. *SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models.* ICML 2023. [arXiv:2211.10438](https://arxiv.org/abs/2211.10438)
+- **KIVI** — Liu, Yuan, Jin, Zhong, Xu, Braverman, Chen, Hu. *KIVI: A Tuning-Free Asymmetric 2bit Quantization for KV Cache.* ICML 2024. [arXiv:2402.02750](https://arxiv.org/abs/2402.02750)
+- **NF4 / QLoRA** — Dettmers, Pagnoni, Holtzman, Zettlemoyer. *QLoRA: Efficient Finetuning of Quantized LLMs.* NeurIPS 2023. [arXiv:2305.14314](https://arxiv.org/abs/2305.14314)
+
 ## Citation
 
 ```bibtex
@@ -167,5 +177,3 @@ Requires `pip install triton>=3.0`.
   url    = {https://github.com/TinyAdapt/Pare},
 }
 ```
-
-Apache 2.0
