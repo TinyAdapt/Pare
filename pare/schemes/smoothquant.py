@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# The scale-fusion helpers are reused from awq.py, which adapts mit-han-lab/llm-awq
+# (MIT, Copyright (c) 2023 MIT HAN Lab). See LICENSE (ATTRIBUTIONS).
 """SmoothQuant — W8A8 quantization via activation smoothing (Xiao et al., 2022).
 
 Algorithm summary
@@ -28,7 +31,7 @@ At inference, both Ŵ and x̂ are quantized to INT8:
   - x̂: per-token dynamic (scale = max|x̂_token| / 127), computed at runtime
 
 This enables INT8 × INT8 matrix multiplication on tensor cores.
-For now, activations are fake-quantized (quantize then dequantize) to validate
+Activations are fake-quantized (quantize then dequantize) to validate
 correctness without a custom kernel.
 
 Reference: https://arxiv.org/abs/2211.10438

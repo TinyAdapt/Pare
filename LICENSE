@@ -174,3 +174,16 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+
+-------------------------------------------------------------------------------
+ATTRIBUTIONS
+
+Portions of the quantization schemes are adapted from the following projects:
+
+- mit-han-lab/llm-awq (https://github.com/mit-han-lab/llm-awq) by MIT HAN Lab,
+  included under the MIT License (https://opensource.org/license/mit).
+- casper-hansen/AutoAWQ (https://github.com/casper-hansen/AutoAWQ) by MIT HAN Lab,
+  included under the MIT License (https://opensource.org/license/mit).
+- IST-DASLab/gptq (https://github.com/IST-DASLab/gptq) by the GPTQ authors,
+  included under the Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0).

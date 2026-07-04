@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+# The GPTQ layer-quantization loop (Hessian damping, Cholesky-based inverse,
+# activation ordering) is adapted from IST-DASLab/gptq (Apache-2.0), and modified.
+# See LICENSE (ATTRIBUTIONS).
 """GPTQ — Accurate Post-Training Quantization (Frantar et al., 2022).
 
 Algorithm summary

@@ -1,19 +1,8 @@
 """Zero-shot commonsense evaluation via lm-evaluation-harness.
 
-Quantizes a model with Pare, then evaluates on the PRIORITY benchmark set —
-tasks verified directly against the original papers' tables (not search
-summaries; see project memory for the per-paper breakdown):
-  - SmoothQuant Table 3 (6 of the 7 tasks — HellaSwag and GSM8K deferred):
-    LAMBADA, PIQA, WinoGrande, OpenBookQA, RTE, COPA
-
-Deferred to nice-to-have-later (do NOT add back without confirming time budget):
-  - GSM8K: generation-based, ~4-6 sec/example x 1319 examples = ~90 min per
-    combination; 12 combos = ~18h total — not feasible in a time-boxed run
-  - HellaSwag: ~40k loglikelihood requests, 74% of SmoothQuant's full suite volume
-
-Dropped entirely (not deferred): ARC-Easy/ARC-Challenge (unverified for AWQ),
-MMLU (confirmed unused by GPTQ/AWQ/SmoothQuant for these text models),
-Vicuna/GPT-4-judge (needs separate judging pipeline).
+Quantizes a model with Pare, then evaluates it on a set of zero-shot tasks
+drawn from the SmoothQuant, GPTQ, and AWQ evaluation suites, namely LAMBADA,
+PIQA, WinoGrande, OpenBookQA, RTE, and COPA.
 
 Install:
     pip install "lm-eval>=0.4.12"
@@ -68,10 +57,7 @@ METHODS: dict[str, QuantConfig | None] = {
     "awq-int4":  QuantConfig(bits=4, scheme="awq",  granularity="per_group", group_size=128),
 }
 
-# task -> num_fewshot. gsm8k is 5-shot per AWQ's protocol; the rest are 0-shot.
-# 6 of SmoothQuant Table 3's 7 tasks — HellaSwag deferred (nice-to-have-later,
-# it alone is ~74% of the full suite's request volume).
-# GSM8K removed: generation-based, ~90 min per combo, deferred to nice-to-have-later.
+# task -> num_fewshot. These six zero-shot tasks are from SmoothQuant Table 3.
 TASK_FEWSHOT = {
     "lambada_openai": 0,
     "piqa":            0,
@@ -189,8 +175,8 @@ def main():
     _print_summary(results)
 
 
-# 6 of SmoothQuant Table 3's 7 zero-shot tasks (HellaSwag deferred), averaged
-# the same way SmoothQuant reports its own accuracy number.
+# The six zero-shot tasks from SmoothQuant Table 3, averaged the same way
+# SmoothQuant reports its own accuracy number.
 ZERO_SHOT_SUITE = ["lambada_openai", "piqa", "winogrande", "openbookqa", "rte", "copa"]
 
 

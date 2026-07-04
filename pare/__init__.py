@@ -1,4 +1,4 @@
-"""Pare — production-ready quantization for large language and multimodal models."""
+"""Pare — a unified, architecture-agnostic library for post-training quantization of large language models."""
 
 from __future__ import annotations
 

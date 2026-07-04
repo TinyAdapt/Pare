@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# The AWQ scale search and scale-fusion helpers are adapted from
+# mit-han-lab/llm-awq (MIT, Copyright (c) 2023 MIT HAN Lab). See LICENSE (ATTRIBUTIONS).
 """AWQ — Activation-aware Weight Quantization (Lin et al., 2023).
 
 Algorithm summary
@@ -31,6 +34,8 @@ Reference: https://arxiv.org/abs/2306.00978
 """
 
 from __future__ import annotations
+
+import warnings
 
 import torch
 import torch.nn as nn
@@ -151,7 +156,7 @@ class _LayerwiseAWQ:
             act_stats = _collect_act_stats(layer, named_linears, inps, pe, device)
 
             # ── 2. Process the four groups: search scale, fuse, update weights ─
-            _apply_awq_groups(layer, act_stats, quantizer.config)
+            fused = _apply_awq_groups(layer, act_stats, quantizer.config)
 
             # ── 3. RTN-quantize all linear layers in this block ────────────
             layer_prefix = f"{layers_path}.{li}"
@@ -171,7 +176,8 @@ class _LayerwiseAWQ:
 
             layer.cpu()
             torch.cuda.empty_cache()
-            print(f"[pare] AWQ layer {li + 1}/{n_layers} done", flush=True)
+            tag = "AWQ" if fused else "RTN fallback (post-norm)"
+            print(f"[pare] layer {li + 1}/{n_layers} done [{tag}]", flush=True)
 
         return model
 
@@ -217,7 +223,7 @@ def _apply_awq_groups(
     layer: nn.Module,
     act_stats: dict[str, Tensor],
     config: QuantConfig,
-) -> None:
+) -> bool:
     """Search and fuse AWQ scales for all four groups in one transformer block.
 
     Targets Llama/Mistral/Qwen block naming: input_layernorm, post_attention_layernorm,
@@ -228,9 +234,19 @@ def _apply_awq_groups(
     the attention residual rather than preceding the attention projections —
     fusing there would corrupt weights). Those models fall through to plain
     RTN quantization.
+
+    Returns True if AWQ scale fusion was applied, False if the block is post-norm
+    and fell back to RTN-INT4.
     """
     if not hasattr(layer, "input_layernorm"):
-        return
+        warnings.warn(
+            "Post-norm block detected (no `input_layernorm`): AWQ scale fusion is "
+            "skipped to avoid corrupting weights, and these layers fall back to "
+            "RTN-INT4. Same bit-width and speed as AWQ, without AWQ's "
+            "activation-aware refinement.",
+            stacklevel=2,
+        )
+        return False
 
     attn = layer.self_attn
     mlp  = layer.mlp
@@ -271,6 +287,8 @@ def _apply_awq_groups(
         if x_max is not None:
             s = _search_scale([mlp.down_proj], x_max, config)
             _scale_fc_fc(mlp.up_proj, mlp.down_proj, s)
+
+    return True
 
 
 def _search_scale(

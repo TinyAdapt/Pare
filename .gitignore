@@ -48,6 +48,9 @@ htmlcov/
 *.dylib
 MANIFEST
 
+# Paper table generator (kept locally, not part of the library)
+benchmarks/make_tables.py
+
 # Results (large binary outputs — not tracked)
 results/*.json
 results/*.log

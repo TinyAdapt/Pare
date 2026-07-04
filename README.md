@@ -116,7 +116,7 @@ from pare.core.dtype import QuantDtype
 QuantConfig(bits=4, dtype=QuantDtype.NF4, scheme="rtn")
 ```
 
-**FP8** — 8-bit float for A100/H100:
+**FP8** — 8-bit float, weight-only (W8A16, runs on any GPU):
 ```python
 QuantConfig(bits=8, dtype=QuantDtype.FP8_E4M3, scheme="rtn")
 ```
@@ -152,7 +152,7 @@ Requires `pip install triton>=3.0`.
 | Quantizing a 7B model | 20 GB VRAM (layerwise strategy peaks at ~2 GB) |
 | RTN / GPTQ / AWQ / NF4 | Any CUDA GPU |
 | SmoothQuant W+A | Any CUDA GPU |
-| FP8 | PyTorch ≥ 2.1 (A100 via software; H100 native) |
+| FP8 | PyTorch ≥ 2.1 (weight-only W8A16, any GPU) |
 | Triton kernel | CUDA GPU + `triton ≥ 3.0` |
 
 ---
@@ -176,7 +176,7 @@ Other resources:
 ```bibtex
 @misc{moslem2026pare,
   author = {Moslem, Yasmin},
-  title  = {Pare: Production-ready quantization for large language models},
+  title  = {Pare: A unified, architecture-agnostic library for reproducible LLM quantization},
   year   = {2026},
   url    = {https://github.com/TinyAdapt/Pare},
 }
