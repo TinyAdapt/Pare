@@ -48,13 +48,3 @@ htmlcov/
 *.dylib
 MANIFEST
 
-# Paper table generator (kept locally, not part of the library)
-benchmarks/make_tables.py
-
-# Results (large binary outputs — not tracked)
-results/*.json
-results/*.log
-# ...except canonical KV cache benchmark data used by the paper (small, reconstructed
-# from console logs after the pod was deleted — must survive in the repo).
-!results/kv_cache_05b.json
-!results/kv_cache_7b.json

@@ -263,20 +263,33 @@ def _apply_awq_groups(
     # Skipped for GQA models (e.g. Qwen2.5, Mistral) where v_proj outputs
     # num_kv_heads * head_dim but o_proj takes num_heads * head_dim.
     # The scale can only be fused when these dimensions match (MHA).
+    # Also skipped when a v_norm sits between v_proj and o_proj (e.g. Gemma-4):
+    # RMSNorm does not commute with a per-channel scale, so fusing through it
+    # would corrupt the output.
     if (hasattr(attn, "v_proj") and hasattr(attn, "o_proj")
+            and not hasattr(attn, "v_norm")
             and attn.v_proj.out_features == attn.o_proj.in_features):
         x_max = act_stats.get("self_attn.o_proj")
         if x_max is not None:
             s = _search_scale([attn.o_proj], x_max, config)
             _scale_fc_fc(attn.v_proj, attn.o_proj, s)
 
-    # ── Group 3: post_attention_layernorm → [gate_proj, up_proj] ─────
-    if hasattr(layer, "post_attention_layernorm") and hasattr(mlp, "gate_proj"):
+    # ── Group 3: [ln] → [gate_proj, up_proj] ──────────────────────────
+    # The fusable norm is whichever one actually precedes the MLP in the
+    # block's dataflow. In Llama/Mistral/Qwen that is post_attention_layernorm.
+    # In sandwich-norm blocks (Gemma-3, Gemma-4) post_attention_layernorm
+    # instead feeds the attention residual, and pre_feedforward_layernorm is
+    # the one that precedes the MLP; fusing into post_attention_layernorm
+    # there would silently corrupt both the attention and MLP paths.
+    mlp_ln = getattr(layer, "pre_feedforward_layernorm", None) or getattr(
+        layer, "post_attention_layernorm", None
+    )
+    if mlp_ln is not None and hasattr(mlp, "gate_proj"):
         x_max = act_stats.get("mlp.gate_proj")
         if x_max is not None:
             fcs = [mlp.gate_proj, mlp.up_proj]
             s   = _search_scale(fcs, x_max, config)
-            _scale_ln_fcs(layer.post_attention_layernorm, fcs, s)
+            _scale_ln_fcs(mlp_ln, fcs, s)
 
     # ── Group 4: up_proj → [down_proj] ───────────────────────────────
     # Only feasible when up_proj.out == down_proj.in (SwiGLU without gating

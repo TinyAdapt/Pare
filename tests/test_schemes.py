@@ -50,6 +50,29 @@ class _FakeBlockPostNorm(nn.Module):
         self.post_attention_layernorm = nn.LayerNorm(d)
 
 
+class _FakeAttnWithVNorm(_FakeAttn):
+    """Gemma-4-style: a norm sits between v_proj and o_proj."""
+    def __init__(self, d: int):
+        super().__init__(d)
+        self.v_norm = nn.LayerNorm(d)
+
+
+class _FakeBlockSandwichNorm(nn.Module):
+    """Gemma-3/Gemma-4-style: input_layernorm precedes attention, but
+    post_attention_layernorm follows the attention residual rather than
+    preceding the MLP. pre_feedforward_layernorm is the norm that actually
+    precedes the MLP.
+    """
+    def __init__(self, d: int = 32, with_v_norm: bool = False):
+        super().__init__()
+        self.self_attn = _FakeAttnWithVNorm(d) if with_v_norm else _FakeAttn(d)
+        self.mlp = _FakeMLP(d)
+        self.input_layernorm = nn.LayerNorm(d)
+        self.post_attention_layernorm = nn.LayerNorm(d)
+        self.pre_feedforward_layernorm = nn.LayerNorm(d)
+        self.post_feedforward_layernorm = nn.LayerNorm(d)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -248,3 +271,57 @@ class TestAWQPostNormGuard:
 
         assert not torch.equal(block.self_attn.q_proj.weight.data, q_before), \
             "q_proj was not modified on a pre-norm block — scale fusion did not fire"
+
+
+# ---------------------------------------------------------------------------
+# AWQ sandwich-norm fusion target (Gemma-3 / Gemma-4)
+#
+# Sandwich-norm blocks have BOTH input_layernorm and post_attention_layernorm,
+# so the post-norm guard above does not trigger. But post_attention_layernorm
+# feeds the attention residual, not the MLP — pre_feedforward_layernorm is the
+# norm that actually precedes gate_proj/up_proj. Fusing into the wrong norm
+# silently corrupts the block without raising a warning.
+# ---------------------------------------------------------------------------
+
+class TestAWQSandwichNormFusionTarget:
+    D = 32
+
+    def _act_stats(self) -> dict:
+        v = torch.ones(self.D)
+        v[::2]  = 0.1
+        v[1::2] = 10.0
+        return {
+            "self_attn.q_proj": v.clone(),
+            "self_attn.o_proj": v.clone(),
+            "mlp.gate_proj":    v.clone(),
+            "mlp.down_proj":    v.clone(),
+        }
+
+    def _config(self) -> QuantConfig:
+        return QuantConfig(bits=4, scheme="awq", granularity="per_group", group_size=self.D)
+
+    def test_fuses_into_pre_feedforward_layernorm_not_post_attention(self):
+        torch.manual_seed(0)
+        block = _FakeBlockSandwichNorm(self.D)
+        post_attn_before = block.post_attention_layernorm.weight.data.clone()
+        pre_ff_before     = block.pre_feedforward_layernorm.weight.data.clone()
+
+        assert _apply_awq_groups(block, self._act_stats(), self._config())
+
+        assert torch.equal(block.post_attention_layernorm.weight.data, post_attn_before), \
+            "post_attention_layernorm was modified — Group 3 fused into the wrong norm"
+        assert not torch.equal(block.pre_feedforward_layernorm.weight.data, pre_ff_before), \
+            "pre_feedforward_layernorm was not modified — Group 3 fusion did not fire"
+
+    def test_v_norm_blocks_group2_fusion(self):
+        # o_proj is only ever touched by Group 2 (v_proj -> o_proj); Group 1
+        # (input_layernorm -> q/k/v) modifies v_proj regardless, so o_proj is
+        # the tensor that isolates whether Group 2 fired.
+        torch.manual_seed(0)
+        block = _FakeBlockSandwichNorm(self.D, with_v_norm=True)
+        o_before = block.self_attn.o_proj.weight.data.clone()
+
+        _apply_awq_groups(block, self._act_stats(), self._config())
+
+        assert torch.equal(block.self_attn.o_proj.weight.data, o_before), \
+            "o_proj was modified despite a v_norm sitting before it — Group 2 guard failed"
